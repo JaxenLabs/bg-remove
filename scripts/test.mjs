@@ -208,6 +208,138 @@ console.log("Not an image");
   check(await page.getByText(/is not a JPG, PNG or WebP image/).isVisible(), "shows a message");
 }
 
+// --- Landing pages (src/content/landing.ts) ------------------------------------
+/** What each landing page must start with: the background chosen and the download it leads to. */
+const LANDINGS = {
+  "remove-background-from-image": { prompt: "Choose an image", pressed: "Transparent" },
+  "transparent-background": { prompt: "Choose a photo to make transparent", pressed: "Transparent" },
+  "white-background-photo": { prompt: "Choose a photo for a white background", pressed: "White" },
+  "remove-background-from-signature": { prompt: "Choose a signature photo", pressed: "Transparent" },
+  "product-photo-background-remover": { prompt: "Choose a product photo", pressed: "White" },
+  "change-background-color": { prompt: "Choose a photo to recolour", pressed: "Custom colour" },
+  "remove-background-from-logo": { prompt: "Choose a logo", pressed: "Transparent" },
+};
+
+console.log("Sitemap, headers and IndexNow key");
+const sitemap = await readFile(join(OUT, "sitemap.xml"), "utf8");
+const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1]).pathname);
+check(locs[0] === `${BASE}/` && Object.keys(LANDINGS).every((s) => locs.includes(`${BASE}/${s}/`)), `sitemap lists home and all ${Object.keys(LANDINGS).length} landing pages (${locs.length} URLs)`);
+check(/\/_next\/static\/\*[\s\S]*immutable/.test(await readFile(join(OUT, "_headers"), "utf8").catch(() => "")), "out/_headers caches /_next/static/");
+{
+  const key = "d3296f6640b0be8aba77f83efe9dc914";
+  check((await readFile(join(OUT, `${key}.txt`), "utf8").catch(() => "")) === key, "IndexNow key file holds exactly the key");
+}
+
+console.log("Landing pages: own title, canonical and preset tool; AI not loaded until a photo is added");
+{
+  const titles = new Set();
+  const loaded = [];
+  const onRequest = (r) => loaded.push(r.url());
+  for (const [slug, want] of Object.entries(LANDINGS)) {
+    // A new tab per page, so nothing from the earlier cutouts is in memory.
+    const p = await browser.newPage();
+    p.on("console", (m) => m.type() === "error" && problems.push(`Console error on /${slug}/: ${m.text()}`));
+    p.on("request", onRequest);
+    loaded.length = 0;
+    const res = await p.goto(`${origin}${BASE}/${slug}/`);
+    const title = await p.title();
+    const canonical = await p.locator('link[rel="canonical"]').getAttribute("href");
+    const h1 = await p.locator("h1").allTextContents();
+    titles.add(title);
+    check(
+      res.ok() && title.length <= 60 && canonical === `https://bgremove-free.pages.dev/${slug}/` && h1.length === 1,
+      `/${slug}/: "${title}" (${title.length} chars), canonical ok, one H1`,
+    );
+    check(await p.getByText(want.prompt, { exact: true }).isVisible(), `/${slug}/ asks "${want.prompt}"`);
+    const ld = (await p.locator('script[type="application/ld+json"]').allTextContents()).join(" ");
+    check(["WebApplication", "FAQPage", "HowTo", "BreadcrumbList"].every((t) => ld.includes(`"${t}"`)), `/${slug}/ structured data`);
+    check(!loaded.some((u) => /imgly|onnx|\.wasm/.test(u)), `/${slug}/ does not download the AI model on load`);
+    const related = await p.locator("#related a").evaluateAll((as) => as.map((a) => new URL(a.href).pathname));
+    check(related.length === Object.keys(LANDINGS).length && related.includes(`${BASE}/`), `/${slug}/ links to the other pages and home`);
+    await p.close();
+  }
+  check(titles.size === Object.keys(LANDINGS).length, "every landing page has its own title");
+
+  // The home page links to every landing page.
+  await page.goto(`${origin}${BASE}/`);
+  const toolLinks = await page.locator("#tools a").evaluateAll((as) => as.map((a) => new URL(a.href).pathname));
+  check(Object.keys(LANDINGS).every((s) => toolLinks.includes(`${BASE}/${s}/`)), "home page links to every landing page");
+}
+
+/** Adds `photo` on a landing page and waits for the result (the model is cached by now). */
+async function cutoutOn(slug, file, name, button) {
+  await page.goto(`${origin}${BASE}/${slug}/`);
+  await page.locator('input[type="file"]').setInputFiles({ name, mimeType: "image/jpeg", buffer: file });
+  await page.getByRole("button", { name: button }).waitFor({ timeout: 240_000 });
+  const want = LANDINGS[slug].pressed;
+  const pressed = await page.locator('button[aria-pressed="true"]').allTextContents();
+  // The custom colour is a colour input, not a swatch button: then no swatch is pressed.
+  check(want === "Custom colour" ? pressed.length === 0 : pressed.length === 1 && pressed[0].startsWith(want), `/${slug}/: "${want}" is chosen after the cutout`);
+}
+
+console.log("Real outputs on landing pages");
+{
+  await cutoutOn("white-background-photo", photo, "passport.jpg", /Download JPG/);
+  let r = await download(/Download JPG/);
+  check(r.jpg && r.width === 800 && near(r.corner, [255, 255, 255]) && near(r.centre, [214, 40, 40], 30), `white background JPG straight away (corner ${r.corner}, centre ${r.centre})`);
+
+  await cutoutOn("transparent-background", photo, "mug.jpg", /Download PNG/);
+  r = await download(/Download PNG/);
+  check(r.png && r.corner[3] < 20 && r.centre[3] > 230, `transparent PNG straight away (corner alpha ${r.corner[3]})`);
+
+  await cutoutOn("change-background-color", photo, "mug.jpg", /Download JPG/);
+  r = await download(/Download JPG/);
+  check(near(r.corner, [34, 197, 94]), `custom colour preset #22c55e (corner ${r.corner})`);
+
+  // A signature: bold dark ink strokes on slightly grey paper.
+  const signature = Buffer.from(
+    await page.evaluate(async () => {
+      const c = document.createElement("canvas");
+      c.width = 800;
+      c.height = 600;
+      const x = c.getContext("2d");
+      x.fillStyle = "#f1f1ee";
+      x.fillRect(0, 0, 800, 600);
+      x.strokeStyle = "#1e2a5a";
+      x.lineWidth = 14;
+      x.lineCap = x.lineJoin = "round";
+      x.beginPath();
+      x.moveTo(170, 360);
+      x.bezierCurveTo(230, 160, 300, 160, 300, 330);
+      x.bezierCurveTo(300, 420, 360, 240, 420, 330);
+      x.bezierCurveTo(470, 400, 520, 220, 560, 300);
+      x.bezierCurveTo(590, 360, 620, 330, 650, 300);
+      x.stroke();
+      x.beginPath();
+      x.moveTo(150, 420);
+      x.lineTo(660, 400);
+      x.stroke();
+      const b = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+      const u = new Uint8Array(await b.arrayBuffer());
+      let s = "";
+      for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
+      return btoa(s);
+    }),
+    "base64",
+  );
+  const modelRequests = [];
+  const onModel = (req) => /imgly|onnx|.wasm/.test(req.url()) && modelRequests.push(req.url());
+  page.on("request", onModel);
+  await cutoutOn("remove-background-from-signature", signature, "signature.jpg", /Download PNG/);
+  page.off("request", onModel);
+  check(modelRequests.length === 0, "signature: cut out without the AI model (ink on paper)");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /Download PNG/ }).click()]);
+  const sig = await page.evaluate(async (b64) => {
+    const bmp = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))]));
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const x = c.getContext("2d");
+    x.drawImage(bmp, 0, 0);
+    const ink = Array.from(x.getImageData(400, 409, 1, 1).data);
+    return { paper: x.getImageData(20, 20, 1, 1).data[3], ink: ink[3], rgb: ink };
+  }, (await readFile(await dl.path())).toString("base64"));
+  check(sig.paper < 20 && sig.ink > 230 && near(sig.rgb, [30, 42, 90], 30), `signature: paper removed (alpha ${sig.paper}), ink kept (${sig.rgb})`);
+}
+
 console.log("JaxScan only, licence link");
 {
   await page.goto(`${origin}${BASE}/`);

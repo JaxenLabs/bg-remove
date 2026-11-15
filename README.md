@@ -26,15 +26,16 @@ Next.js 16 (App Router, static export) + TypeScript + Tailwind CSS 4.
 
 ```
 src/
-  app/                  page, layout (<head> / SEO), robots, sitemap, manifest, icons, share image
-  components/           header, footer (with source-code link), FAQ, JaxScan promo, sticky banner
+  app/                  page, [slug] (landing pages), layout (<head> / SEO), robots, sitemap, manifest, icons, share image
+  components/           header, footer (with source-code link), FAQ, Sections (tool hero, steps, links), LandingPage, JaxScan promo, sticky banner
   components/studio/    Studio (upload, progress, swatches, download), CompareSlider
-  content/              site.ts (name, URL, keywords), page.ts (page text, passport guide, comparison, FAQ), jaxscan.ts
-  lib/bg/               engine (AI wrapper + progress), compose (PNG/JPG output), swatches
-  lib/seo.ts            JSON-LD: WebApplication, FAQPage, HowTo, WebSite, Organization
+  content/              site.ts (name, URL, keywords), page.ts (page text, passport guide, comparison, FAQ), landing.ts (one entry per landing page: /transparent-background/ …), jaxscan.ts
+  lib/bg/               engine (AI wrapper + progress), ink (signature cutout by brightness), compose (PNG/JPG output), swatches
+  lib/seo.ts            landing-page <head> tags; JSON-LD: WebApplication, FAQPage, HowTo, BreadcrumbList, WebSite, Organization
 scripts/
   fetch-model.mjs       downloads the AI model into public/imgly/
   make-images.mjs       renders icons, favicon and share image from public/jaxscan-icon.png
+  indexnow.mjs          tells IndexNow search engines about the sitemap (CI, main only)
   test.mjs              end-to-end test in a real browser: real cutouts and pixel checks
 ```
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { JaxScanCard } from "@/components/JaxScanPromo";
 import { Icon } from "@/components/Icon";
 import { compose, outputName, type Background } from "@/lib/bg/compose";
-import type { Stage } from "@/lib/bg/engine";
+import type { CutoutMethod, Stage } from "@/lib/bg/engine";
 import { SWATCHES } from "@/lib/bg/swatches";
 import { CompareSlider } from "./CompareSlider";
 
@@ -17,17 +17,37 @@ interface Photo {
   height: number;
 }
 
+const DEFAULT_PROMPT = {
+  title: "Choose a photo",
+  hint: "JPG, PNG or WebP. Drop it here, paste it (Ctrl+V) or tap to pick it. Portraits, products, pets, logos.",
+};
+const DEFAULT_CUSTOM = "#22c55e";
+
 /**
  * The background-removal studio: drop or paste a photo, the on-device AI cuts
  * out the subject, then compare before/after, pick a background and download.
+ * Landing pages set it up for their job: `initialBackground` is the background
+ * chosen when the page opens (a colour that isn't a swatch becomes the custom
+ * colour), `prompt` words the "choose a photo" box, and `method: "ink"`
+ * cuts out pen strokes on paper by brightness instead of with the AI (signatures).
  */
-export function Studio() {
+export function Studio({
+  initialBackground = "transparent",
+  prompt = DEFAULT_PROMPT,
+  method = "ai",
+}: {
+  initialBackground?: Background;
+  prompt?: { title: string; hint: string };
+  method?: CutoutMethod;
+}) {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [cutoutUrl, setCutoutUrl] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [background, setBackground] = useState<Background>("transparent");
-  const [custom, setCustom] = useState("#22c55e");
+  const [background, setBackground] = useState<Background>(initialBackground);
+  const [custom, setCustom] = useState<string>(
+    initialBackground !== "transparent" && !SWATCHES.some((s) => s.value === initialBackground) ? initialBackground : DEFAULT_CUSTOM,
+  );
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +84,7 @@ export function Studio() {
     setStage({ phase: "cutout", percent: 0 });
     try {
       // Loaded only now: the AI library is large and most visitors arrive just to read.
-      const { cutout } = await import("@/lib/bg/engine");
+      const { cutout } = method === "ink" ? { cutout: (await import("@/lib/bg/ink")).inkCutout } : await import("@/lib/bg/engine");
       const blob = await cutout(file, (s) => run === runRef.current && setStage(s));
       if (run !== runRef.current) return;
       setCutoutUrl(URL.createObjectURL(blob));
@@ -74,7 +94,7 @@ export function Studio() {
     } finally {
       if (run === runRef.current) setStage(null);
     }
-  }, []);
+  }, [method]);
 
   // Paste a photo or screenshot straight from the clipboard (Ctrl+V).
   useEffect(() => {
@@ -152,8 +172,8 @@ export function Studio() {
           <span className="btn-primary grid size-16 place-items-center rounded-2xl">
             <Icon name="upload" className="size-7" />
           </span>
-          <span className="mt-4 font-display text-xl font-semibold sm:text-2xl">Choose a photo</span>
-          <span className="mt-2 max-w-md text-sm text-muted">JPG, PNG or WebP. Drop it here, paste it (Ctrl+V) or tap to pick it. Portraits, products, pets, logos.</span>
+          <span className="mt-4 font-display text-xl font-semibold sm:text-2xl">{prompt.title}</span>
+          <span className="mt-2 max-w-md text-sm text-muted">{prompt.hint}</span>
           <span className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-text px-6 font-semibold text-bg">
             <Icon name="plus" />
             Select image

@@ -8,6 +8,9 @@ import { site } from "@/content/site";
  * The photo itself never leaves the device.
  */
 
+/** "ai" for photos; "ink" for pen strokes on paper (see ink.ts). */
+export type CutoutMethod = "ai" | "ink";
+
 export type Stage = { phase: "download"; percent: number } | { phase: "cutout"; percent: number };
 
 /** Rough share of the work for each step after the download, for the progress bar. */
