@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const OUT = fileURLToPath(new URL("../out/", import.meta.url));
-const BASE = "/bg-remove";
+const BASE = "";
 const UTM = "utm_source%3Dweb_remove_bg";
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".txt": "text/plain", ".xml": "application/xml", ".json": "application/json", ".wasm": "application/wasm", ".webmanifest": "application/manifest+json" };
 

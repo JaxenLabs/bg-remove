@@ -9,3 +9,6 @@ npm-debug.log*
 
 # Downloaded by scripts/fetch-model.mjs
 public/imgly/
+
+# Built by scripts/github-redirects.mjs in CI
+github-pages/

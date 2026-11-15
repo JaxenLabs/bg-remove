@@ -2,7 +2,7 @@
 
 Free AI background remover that runs **100% in the browser**: photos are never uploaded.
 
-Live: **https://jaxenlabs.github.io/bg-remove/** (moving to bgremove.io)
+Live: **https://bgremove-free.pages.dev/** (moving to bgremove.io)
 
 ## What it does
 
